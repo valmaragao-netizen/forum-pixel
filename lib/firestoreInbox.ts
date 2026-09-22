@@ -14,6 +14,10 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import {
+  logFirestoreError,
+  withFirestoreDebug,
+} from "@/lib/firestoreDebug";
 
 export type InboxMessage = {
   id: string;
@@ -77,8 +81,12 @@ function messageFromSnapshot(
 }
 
 export async function getInboxMessages(userId: string) {
-  const snapshot = await getDocs(
-    query(collection(db, "inbox"), where("recipientId", "==", userId)),
+  const snapshot = await withFirestoreDebug(
+    "inbox.listByRecipient",
+    () => getDocs(
+      query(collection(db, "inbox"), where("recipientId", "==", userId)),
+    ),
+    { userId },
   );
 
   return snapshot.docs
@@ -87,10 +95,14 @@ export async function getInboxMessages(userId: string) {
 }
 
 export async function markInboxMessageRead(messageId: string) {
-  await updateDoc(doc(db, "inbox", messageId), {
-    read: true,
-    readAt: serverTimestamp(),
-  });
+  await withFirestoreDebug(
+    "inbox.markRead",
+    () => updateDoc(doc(db, "inbox", messageId), {
+      read: true,
+      readAt: serverTimestamp(),
+    }),
+    { messageId },
+  );
 }
 
 function directMessageFromSnapshot(
@@ -122,7 +134,11 @@ function directMessageFromSnapshot(
 }
 
 export async function getUserDirectory(currentUserId: string) {
-  const snapshot = await getDocs(collection(db, "users"));
+  const snapshot = await withFirestoreDebug(
+    "users.listDirectory",
+    () => getDocs(collection(db, "users")),
+    { currentUserId },
+  );
 
   return snapshot.docs
     .filter((item) => item.id !== currentUserId)
@@ -153,7 +169,10 @@ export function subscribeDirectMessages(
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
       );
     },
-    onError,
+    (error) => {
+      logFirestoreError("messages.subscribe", error, { userId });
+      onError(error);
+    },
   );
 }
 
@@ -174,22 +193,30 @@ export async function sendDirectMessage({
     throw new Error("A mensagem deve ter entre 1 e 2.000 caracteres.");
   }
 
-  await addDoc(collection(db, "messages"), {
-    participantIds: [senderId, recipient.uid],
-    senderId,
-    senderUsername,
-    recipientId: recipient.uid,
-    recipientUsername: recipient.displayName,
-    body: normalizedBody,
-    read: false,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  await withFirestoreDebug(
+    "messages.create",
+    () => addDoc(collection(db, "messages"), {
+      participantIds: [senderId, recipient.uid],
+      senderId,
+      senderUsername,
+      recipientId: recipient.uid,
+      recipientUsername: recipient.displayName,
+      body: normalizedBody,
+      read: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+    { senderId, recipientId: recipient.uid },
+  );
 }
 
 export async function markDirectMessageRead(messageId: string) {
-  await updateDoc(doc(db, "messages", messageId), {
-    read: true,
-    readAt: serverTimestamp(),
-  });
+  await withFirestoreDebug(
+    "messages.markRead",
+    () => updateDoc(doc(db, "messages", messageId), {
+      read: true,
+      readAt: serverTimestamp(),
+    }),
+    { messageId },
+  );
 }

@@ -158,6 +158,7 @@ service cloud.firestore {
           'status',
           'views',
           'repliesCount',
+          'likesCount',
           'createdAt',
           'updatedAt'
         ])
@@ -187,6 +188,7 @@ service cloud.firestore {
         && request.resource.data.status == 'published'
         && request.resource.data.views == 0
         && request.resource.data.repliesCount == 0
+        && request.resource.data.likesCount == 0
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 

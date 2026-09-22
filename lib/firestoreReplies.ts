@@ -8,6 +8,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 export async function publishReply({
   user,
@@ -72,6 +73,10 @@ export async function publishReply({
     });
   }
 
-  await batch.commit();
+  await withFirestoreDebug(
+    "replies.createAndIncrementTopic",
+    () => batch.commit(),
+    { replyId: replyRef.id, topicId },
+  );
   return replyRef.id;
 }

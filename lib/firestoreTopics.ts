@@ -13,6 +13,7 @@ import {
 } from "firebase/storage";
 
 import { db, storage } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 export const TOPIC_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const TOPIC_IMAGE_TYPES = [
@@ -99,23 +100,28 @@ export async function publishTopic(
     imageUploaded = true;
 
     const imageUrl = await getDownloadURL(imageRef);
-    await setDoc(topicRef, {
-      slug,
-      title: input.title.trim(),
-      summary: input.summary.trim(),
-      content: input.content.trim(),
-      categorySlug: input.categorySlug,
-      categoryName: input.categoryName,
-      authorId: user.uid,
-      authorName: input.authorName,
-      imageUrl,
-      imagePath,
-      status: "published",
-      views: 0,
-      repliesCount: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    await withFirestoreDebug(
+      "topics.create",
+      () => setDoc(topicRef, {
+        slug,
+        title: input.title.trim(),
+        summary: input.summary.trim(),
+        content: input.content.trim(),
+        categorySlug: input.categorySlug,
+        categoryName: input.categoryName,
+        authorId: user.uid,
+        authorName: input.authorName,
+        imageUrl,
+        imagePath,
+        status: "published",
+        views: 0,
+        repliesCount: 0,
+        likesCount: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+      { topicId: topicRef.id, categorySlug: input.categorySlug },
+    );
 
     return { id: topicRef.id, slug };
   } catch (error) {

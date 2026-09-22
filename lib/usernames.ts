@@ -2,6 +2,7 @@ import type { User } from "firebase/auth";
 import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{2,32}$/;
 
@@ -43,7 +44,7 @@ export async function reserveUsername(user: User, username: string) {
   const usernameRef = doc(db, "usernames", normalizedUsername);
   const userRef = doc(db, "users", user.uid);
 
-  await runTransaction(db, async (transaction) => {
+  await withFirestoreDebug("users.createWithUsername", () => runTransaction(db, async (transaction) => {
     const usernameSnapshot = await transaction.get(usernameRef);
 
     if (usernameSnapshot.exists()) {
@@ -66,7 +67,7 @@ export async function reserveUsername(user: User, username: string) {
       role: "user",
       createdAt: serverTimestamp(),
     });
-  });
+  }), { userId: user.uid, username: normalizedUsername });
 
   return { displayName, normalizedUsername };
 }

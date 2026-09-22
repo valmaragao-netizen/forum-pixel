@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 export type ModerationTargetType = "topic" | "reply";
 
@@ -81,10 +82,13 @@ function replyFromSnapshot(
 }
 
 export async function getModerationItems() {
-  const [topicsSnapshot, repliesSnapshot] = await Promise.all([
-    getDocs(query(collection(db, "topics"), orderBy("createdAt", "desc"), limit(50))),
-    getDocs(query(collection(db, "replies"), orderBy("createdAt", "desc"), limit(50))),
-  ]);
+  const [topicsSnapshot, repliesSnapshot] = await withFirestoreDebug(
+    "moderation.listContent",
+    () => Promise.all([
+      getDocs(query(collection(db, "topics"), orderBy("createdAt", "desc"), limit(50))),
+      getDocs(query(collection(db, "replies"), orderBy("createdAt", "desc"), limit(50))),
+    ]),
+  );
 
   return {
     topics: topicsSnapshot.docs.map(topicFromSnapshot),
@@ -102,7 +106,7 @@ export async function softDeleteContent(
   if (type === "reply") {
     const replyRef = doc(db, collectionName, id);
 
-    await runTransaction(db, async (transaction) => {
+    await withFirestoreDebug("moderation.softDeleteReply", () => runTransaction(db, async (transaction) => {
       const replySnapshot = await transaction.get(replyRef);
 
       if (!replySnapshot.exists()) {
@@ -132,15 +136,19 @@ export async function softDeleteContent(
           });
         }
       }
-    });
+    }), { replyId: id, moderatorId });
 
     return;
   }
 
-  await updateDoc(doc(db, collectionName, id), {
-    status: "deleted",
-    deletedAt: serverTimestamp(),
-    deletedBy: moderatorId,
-    updatedAt: serverTimestamp(),
-  });
+  await withFirestoreDebug(
+    "moderation.softDeleteTopic",
+    () => updateDoc(doc(db, collectionName, id), {
+      status: "deleted",
+      deletedAt: serverTimestamp(),
+      deletedBy: moderatorId,
+      updatedAt: serverTimestamp(),
+    }),
+    { topicId: id, moderatorId },
+  );
 }

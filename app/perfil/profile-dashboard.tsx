@@ -50,6 +50,7 @@ export function ProfileDashboard() {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -164,7 +165,19 @@ export function ProfileDashboard() {
 
       <nav className="profile-nav" aria-label="Seções do perfil">
         <a href="#minhas-postagens">POSTAGENS</a>
-        <a href="#editar-perfil">EDITAR PERFIL</a>
+        <button
+          type="button"
+          aria-expanded={profileEditorOpen}
+          aria-controls="profile-editor-form"
+          onClick={() => {
+            setProfileEditorOpen((current) => !current);
+            window.requestAnimationFrame(() => {
+              document.getElementById("editar-perfil")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+          }}
+        >
+          EDITAR PERFIL
+        </button>
         <a href="#caixa-de-entrada">CAIXA DE ENTRADA <b>{unreadCount}</b></a>
       </nav>
 
@@ -174,7 +187,10 @@ export function ProfileDashboard() {
         <section id="minhas-postagens" className="profile-panel profile-posts-panel">
           <header>
             <div><p className="eyebrow">/ CONTEÚDO PUBLICADO</p><h2>MINHAS POSTAGENS</h2></div>
-            <span>{topics.length.toString().padStart(2, "0")} TÓPICOS</span>
+            <div className="profile-panel-actions">
+              <span>{topics.length.toString().padStart(2, "0")} TÓPICOS</span>
+              <Link href="/novo-topico">+ NOVA POSTAGEM</Link>
+            </div>
           </header>
 
           {loadingData ? (
@@ -200,7 +216,11 @@ export function ProfileDashboard() {
         </section>
 
         <aside className="profile-side-column">
-          <ProfileEditor profile={profile} />
+          <ProfileEditor
+            profile={profile}
+            open={profileEditorOpen}
+            onToggle={() => setProfileEditorOpen((current) => !current)}
+          />
           <section id="caixa-de-entrada" className="profile-panel inbox-panel">
             <header>
               <div><p className="eyebrow">/ NOTIFICAÇÕES</p><h2>CAIXA DE ENTRADA</h2></div>
@@ -250,6 +270,7 @@ function DirectMessages() {
   const [directory, setDirectory] = useState<DirectoryUser[]>([]);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [userSearch, setUserSearch] = useState("");
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -266,7 +287,6 @@ function DirectMessages() {
       .then((users) => {
         if (active) {
           setDirectory(users);
-          setSelectedUserId((current) => current || users[0]?.uid || "");
         }
       })
       .catch((caughtError) => {
@@ -334,7 +354,7 @@ function DirectMessages() {
     const recipient = directory.find((item) => item.uid === selectedUserId);
 
     if (!recipient) {
-      setError("Selecione um usuário para iniciar a conversa.");
+      setError("Pesquise e selecione um usuário para iniciar a conversa.");
       return;
     }
 
@@ -361,6 +381,12 @@ function DirectMessages() {
   }
 
   const selectedUser = directory.find((item) => item.uid === selectedUserId) ?? null;
+  const normalizedUserSearch = userSearch.trim().replace(/^@/, "").toLocaleLowerCase("pt-BR");
+  const userSearchResults = normalizedUserSearch
+    ? directory
+        .filter((item) => item.displayName.toLocaleLowerCase("pt-BR").includes(normalizedUserSearch))
+        .slice(0, 8)
+    : [];
   const conversation = messages.filter((message) => (
     message.senderId === selectedUserId || message.recipientId === selectedUserId
   ));
@@ -376,21 +402,60 @@ function DirectMessages() {
       {directory.length > 0 ? (
         <>
           <div className="direct-recipient">
-            <label htmlFor="direct-recipient">CONVERSAR COM</label>
-            <div className="select-frame">
-              <select
-                id="direct-recipient"
-                value={selectedUserId}
-                onChange={(event) => setSelectedUserId(event.target.value)}
-              >
-                {directory.map((directoryUser) => (
-                  <option value={directoryUser.uid} key={directoryUser.uid}>
-                    @{directoryUser.displayName}
-                  </option>
-                ))}
-              </select>
-              <span aria-hidden="true">▼</span>
+            <label htmlFor="direct-user-search">CONVERSAR COM</label>
+            <div className="direct-user-search">
+              <span aria-hidden="true">@</span>
+              <input
+                id="direct-user-search"
+                type="search"
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+                placeholder="Pesquisar usuário..."
+                autoComplete="off"
+              />
             </div>
+
+            {normalizedUserSearch && (
+              <div className="direct-user-results" aria-label="Resultados da busca de usuários">
+                {userSearchResults.length > 0 ? userSearchResults.map((directoryUser) => (
+                  <button
+                    className={directoryUser.uid === selectedUserId ? "is-selected" : ""}
+                    type="button"
+                    onClick={() => {
+                      setSelectedUserId(directoryUser.uid);
+                      setUserSearch("");
+                      setError("");
+                    }}
+                    key={directoryUser.uid}
+                  >
+                    <span
+                      className={`direct-user-avatar ${directoryUser.avatarUrl ? "has-image" : ""}`}
+                      style={avatarStyle(directoryUser.avatarUrl)}
+                      aria-hidden="true"
+                    >
+                      {!directoryUser.avatarUrl && directoryUser.displayName.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span><b>@{directoryUser.displayName}</b><small>{directoryUser.bio || "Membro do Fórum Pixel"}</small></span>
+                    <i aria-hidden="true">→</i>
+                  </button>
+                )) : (
+                  <p>Nenhum usuário encontrado para “{userSearch.trim()}”.</p>
+                )}
+              </div>
+            )}
+
+            {selectedUser && (
+              <div className="direct-selected-user" aria-live="polite">
+                <span
+                  className={`direct-user-avatar ${selectedUser.avatarUrl ? "has-image" : ""}`}
+                  style={avatarStyle(selectedUser.avatarUrl)}
+                  aria-hidden="true"
+                >
+                  {!selectedUser.avatarUrl && selectedUser.displayName.slice(0, 2).toUpperCase()}
+                </span>
+                <span><small>CONVERSA SELECIONADA</small><b>@{selectedUser.displayName}</b></span>
+              </div>
+            )}
           </div>
 
           <div className="direct-thread" aria-live="polite">
@@ -409,7 +474,7 @@ function DirectMessages() {
                 );
               })
             ) : (
-              <div className="direct-empty"><span>&gt;_</span><p>Comece uma conversa com {selectedUser ? `@${selectedUser.displayName}` : "outro usuário"}.</p></div>
+              <div className="direct-empty"><span>&gt;_</span><p>{selectedUser ? `Comece uma conversa com @${selectedUser.displayName}.` : "Pesquise um usuário acima para iniciar uma conversa."}</p></div>
             )}
           </div>
 
@@ -422,12 +487,12 @@ function DirectMessages() {
               maxLength={2000}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Escreva uma mensagem privada..."
-              disabled={sending}
+              placeholder={selectedUser ? `Mensagem para @${selectedUser.displayName}...` : "Selecione um usuário para conversar..."}
+              disabled={sending || !selectedUser}
               required
             />
             {error && <p className="auth-form-error" role="alert"><span>!</span> {error}</p>}
-            <button className="forum-button forum-button-primary" type="submit" disabled={sending || !draft.trim()}>
+            <button className="forum-button forum-button-primary" type="submit" disabled={sending || !selectedUser || !draft.trim()}>
               {sending ? "ENVIANDO..." : "ENVIAR MENSAGEM ↵"}
             </button>
           </form>
@@ -439,7 +504,15 @@ function DirectMessages() {
   );
 }
 
-function ProfileEditor({ profile }: { profile: UserProfile }) {
+function ProfileEditor({
+  profile,
+  open,
+  onToggle,
+}: {
+  profile: UserProfile;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const { user } = useAuth();
   const [avatar, setAvatar] = useState<File | null>(null);
   const [selectedPreset, setSelectedPreset] = useState("");
@@ -535,9 +608,20 @@ function ProfileEditor({ profile }: { profile: UserProfile }) {
   const displayedAvatar = preview || profile.avatarUrl;
 
   return (
-    <section id="editar-perfil" className="profile-panel profile-editor">
-      <header><div><p className="eyebrow">/ CONFIGURAÇÕES</p><h2>EDITAR PERFIL</h2></div><span>UID SEGURO</span></header>
-      <form onSubmit={handleSubmit}>
+    <section id="editar-perfil" className={`profile-panel profile-editor ${open ? "is-open" : ""}`}>
+      <header className="profile-editor-header">
+        <button
+          className="profile-editor-toggle"
+          type="button"
+          aria-expanded={open}
+          aria-controls="profile-editor-form"
+          onClick={onToggle}
+        >
+          <span className="profile-editor-heading"><span className="eyebrow">/ CONFIGURAÇÕES</span><strong>EDITAR PERFIL</strong></span>
+          <span className="profile-editor-toggle-state">{open ? "FECHAR −" : "ABRIR +"}</span>
+        </button>
+      </header>
+      <form id="profile-editor-form" onSubmit={handleSubmit} hidden={!open}>
         <fieldset className="preset-avatar-fieldset">
           <legend>ESCOLHA UM AVATAR DO FÓRUM</legend>
           <div className="preset-avatar-grid">

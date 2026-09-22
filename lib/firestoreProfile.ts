@@ -11,6 +11,7 @@ import {
 } from "firebase/storage";
 
 import { db, storage } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 export const AVATAR_MAX_BYTES = 3 * 1024 * 1024;
 export const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -95,19 +96,27 @@ export async function updateForumProfile({
     avatarUrl = await getDownloadURL(avatarRef);
   }
 
-  await updateDoc(doc(db, "users", user.uid), {
-    avatarUrl,
-    bio: normalizedBio,
-  });
+  await withFirestoreDebug(
+    "users.updateProfile",
+    () => updateDoc(doc(db, "users", user.uid), {
+      avatarUrl,
+      bio: normalizedBio,
+    }),
+    { userId: user.uid },
+  );
 
   return avatarUrl;
 }
 
 export async function deleteOwnTopic(userId: string, topicId: string) {
-  await updateDoc(doc(db, "topics", topicId), {
-    status: "deleted",
-    deletedAt: serverTimestamp(),
-    deletedBy: userId,
-    updatedAt: serverTimestamp(),
-  });
+  await withFirestoreDebug(
+    "topics.softDeleteByAuthor",
+    () => updateDoc(doc(db, "topics", topicId), {
+      status: "deleted",
+      deletedAt: serverTimestamp(),
+      deletedBy: userId,
+      updatedAt: serverTimestamp(),
+    }),
+    { topicId, userId },
+  );
 }

@@ -4,6 +4,7 @@ import { doc, increment, updateDoc } from "firebase/firestore";
 import { useEffect } from "react";
 
 import { db } from "@/lib/firebase";
+import { logFirestoreError } from "@/lib/firestoreDebug";
 
 export function TopicViewTracker({ topicId }: { topicId: string }) {
   useEffect(() => {
@@ -21,7 +22,8 @@ export function TopicViewTracker({ topicId }: { topicId: string }) {
       .then(() => {
         window.sessionStorage.setItem(storageKey, "counted");
       })
-      .catch(() => {
+      .catch((error) => {
+        logFirestoreError("topics.incrementViews", error, { topicId });
         window.sessionStorage.removeItem(storageKey);
       });
   }, [topicId]);

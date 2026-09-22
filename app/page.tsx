@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { ForumHeader } from "@/app/components/forum-header";
+import { HomeJoinCard } from "@/app/components/home-join-card";
 import { UserAvatar } from "@/app/components/user-avatar";
 import { getCategoryCoverUrl } from "@/lib/categoryCovers";
 import {
@@ -15,8 +16,13 @@ import {
 } from "@/lib/forumData";
 
 type HomePageProps = {
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<{
+    q?: string | string[];
+    page?: string | string[];
+  }>;
 };
+
+const TOPICS_PER_PAGE = 10;
 
 function TopicArtwork({ tone, imageUrl }: { tone: VisualTone; imageUrl: string }) {
   const art = tone === "blue" ? "code" : tone === "pink" ? "game" : tone === "yellow" ? "hardware" : "retro";
@@ -45,8 +51,12 @@ function TopicArtwork({ tone, imageUrl }: { tone: VisualTone; imageUrl: string }
 
 export default async function Home({ searchParams }: HomePageProps) {
   await connection();
-  const { q } = await searchParams;
+  const { q, page } = await searchParams;
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
+  const pageParam = Array.isArray(page) ? page[0] : page;
+  const requestedPage = pageParam && /^\d+$/.test(pageParam)
+    ? Math.max(1, Number(pageParam))
+    : 1;
   const normalizedQuery = query.toLocaleLowerCase("pt-BR");
   let forumCategories = [] as Awaited<ReturnType<typeof getCategories>>;
   let forumTopics = [] as Awaited<ReturnType<typeof getPublishedTopics>>;
@@ -76,6 +86,25 @@ export default async function Home({ searchParams }: HomePageProps) {
         ].some((field) => field.toLocaleLowerCase("pt-BR").includes(normalizedQuery)),
       )
     : forumTopics;
+
+  const totalPages = Math.max(1, Math.ceil(visibleTopics.length / TOPICS_PER_PAGE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const pageStart = (currentPage - 1) * TOPICS_PER_PAGE;
+  const paginatedTopics = visibleTopics.slice(pageStart, pageStart + TOPICS_PER_PAGE);
+  const paginationHref = (pageNumber: number) => {
+    const params = new URLSearchParams();
+
+    if (query) {
+      params.set("q", query);
+    }
+
+    if (pageNumber > 1) {
+      params.set("page", String(pageNumber));
+    }
+
+    const queryString = params.toString();
+    return `${queryString ? `/?${queryString}` : "/"}#topicos`;
+  };
 
   const forumStats = [
     { label: "USUÁRIOS", value: stats.users.toLocaleString("pt-BR") },
@@ -152,9 +181,9 @@ export default async function Home({ searchParams }: HomePageProps) {
               </label>
             </div>
 
-            {visibleTopics.length > 0 ? (
+            {paginatedTopics.length > 0 ? (
               <div className="topic-feed">
-                {visibleTopics.map((topic) => (
+                {paginatedTopics.map((topic) => (
                 <Link id={`topico-${topic.slug}`} key={topic.id} className={`topic-card tone-${topic.tone}`} href={`/topico/${topic.slug}`}>
                   <span className="topic-visual">
                     <TopicArtwork tone={topic.tone} imageUrl={topic.imageUrl} />
@@ -192,10 +221,31 @@ export default async function Home({ searchParams }: HomePageProps) {
               </div>
             )}
 
-            {!query && (
-              <button className="load-more" type="button">
-                CARREGAR MAIS CONVERSAS <span>[ + ]</span>
-              </button>
+            {visibleTopics.length > 0 && (
+              <nav className="topic-pagination" aria-label="Paginação dos tópicos">
+                {currentPage > 1 ? (
+                  <Link className="pagination-link pagination-arrow" href={paginationHref(currentPage - 1)} aria-label="Página anterior">←</Link>
+                ) : (
+                  <span className="pagination-link pagination-arrow is-disabled" aria-hidden="true">←</span>
+                )}
+
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+                  <Link
+                    className={`pagination-link ${pageNumber === currentPage ? "is-current" : ""}`}
+                    href={paginationHref(pageNumber)}
+                    aria-current={pageNumber === currentPage ? "page" : undefined}
+                    key={pageNumber}
+                  >
+                    {pageNumber}
+                  </Link>
+                ))}
+
+                {currentPage < totalPages ? (
+                  <Link className="pagination-link pagination-arrow" href={paginationHref(currentPage + 1)} aria-label="Próxima página">→</Link>
+                ) : (
+                  <span className="pagination-link pagination-arrow is-disabled" aria-hidden="true">→</span>
+                )}
+              </nav>
             )}
           </section>
 
@@ -231,13 +281,7 @@ export default async function Home({ searchParams }: HomePageProps) {
               </ul>
             </section>
 
-            <section id="criar-conta" className="join-card">
-              <p className="eyebrow">NOVO POR AQUI?</p>
-              <h2>Sua próxima conversa começa aqui.</h2>
-              <p>Crie seu perfil, encontre sua comunidade e publique sua primeira ideia.</p>
-              <Link className="join-button" href="/criar-conta">+ CRIAR CONTA</Link>
-              <span className="join-decoration" aria-hidden="true">▓<br />▒▓<br />░▒▓</span>
-            </section>
+            <HomeJoinCard />
 
             <section className="terminal-card" aria-label="Estado do sistema">
               <p><span>&gt;</span> sistema online</p>

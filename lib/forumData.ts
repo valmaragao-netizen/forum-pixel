@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 
 export type VisualTone = "blue" | "pink" | "yellow" | "cyan";
 
@@ -45,6 +46,7 @@ export type ForumTopic = {
   relativeTime: string;
   views: number;
   repliesCount: number;
+  likesCount: number;
   imageUrl: string;
   imagePath: string;
   status: "published";
@@ -197,6 +199,7 @@ function topicFromData(id: string, data: DocumentData): ForumTopic | null {
     relativeTime: formatRelativeDate(createdAt),
     views: numberValue(data.views),
     repliesCount: numberValue(data.repliesCount),
+    likesCount: numberValue(data.likesCount),
     imageUrl: stringValue(data.imageUrl),
     imagePath: stringValue(data.imagePath),
     status: "published",
@@ -241,8 +244,12 @@ async function getAvatarUrlsByUserId(userIds: string[]) {
 
   for (let index = 0; index < uniqueUserIds.length; index += 30) {
     const userIdChunk = uniqueUserIds.slice(index, index + 30);
-    const snapshot = await getDocs(
-      query(collection(db, "users"), where(documentId(), "in", userIdChunk)),
+    const snapshot = await withFirestoreDebug(
+      "users.readByIds",
+      () => getDocs(
+        query(collection(db, "users"), where(documentId(), "in", userIdChunk)),
+      ),
+      { count: userIdChunk.length },
     );
 
     for (const userSnapshot of snapshot.docs) {
@@ -290,8 +297,11 @@ export function getTopicPreview(content: string, maxLength = 110) {
 }
 
 export async function getCategories() {
-  const snapshot = await getDocs(
-    query(collection(db, "categories"), where("status", "==", "active")),
+  const snapshot = await withFirestoreDebug(
+    "categories.listActive",
+    () => getDocs(
+      query(collection(db, "categories"), where("status", "==", "active")),
+    ),
   );
 
   return snapshot.docs
@@ -301,13 +311,17 @@ export async function getCategories() {
 }
 
 export async function getCategoryBySlug(slug: string) {
-  const snapshot = await getDocs(
-    query(
-      collection(db, "categories"),
-      where("status", "==", "active"),
-      where("slug", "==", slug),
-      limit(1),
+  const snapshot = await withFirestoreDebug(
+    "categories.readActiveBySlug",
+    () => getDocs(
+      query(
+        collection(db, "categories"),
+        where("status", "==", "active"),
+        where("slug", "==", slug),
+        limit(1),
+      ),
     ),
+    { categorySlug: slug },
   );
   const result = snapshot.docs[0];
 
@@ -315,8 +329,11 @@ export async function getCategoryBySlug(slug: string) {
 }
 
 export async function getPublishedTopics() {
-  const snapshot = await getDocs(
-    query(collection(db, "topics"), where("status", "==", "published")),
+  const snapshot = await withFirestoreDebug(
+    "topics.listPublished",
+    () => getDocs(
+      query(collection(db, "topics"), where("status", "==", "published")),
+    ),
   );
 
   const topics = sortByCreatedAtDescending(
@@ -334,12 +351,16 @@ export async function getTopicBySlug(slug: string) {
 }
 
 export async function getTopicsByCategory(categorySlug: string) {
-  const snapshot = await getDocs(
-    query(
-      collection(db, "topics"),
-      where("status", "==", "published"),
-      where("categorySlug", "==", categorySlug),
+  const snapshot = await withFirestoreDebug(
+    "topics.listPublishedByCategory",
+    () => getDocs(
+      query(
+        collection(db, "topics"),
+        where("status", "==", "published"),
+        where("categorySlug", "==", categorySlug),
+      ),
     ),
+    { categorySlug },
   );
 
   const topics = sortByCreatedAtDescending(
@@ -352,12 +373,16 @@ export async function getTopicsByCategory(categorySlug: string) {
 }
 
 export async function getTopicsByAuthor(authorId: string) {
-  const snapshot = await getDocs(
-    query(
-      collection(db, "topics"),
-      where("status", "==", "published"),
-      where("authorId", "==", authorId),
+  const snapshot = await withFirestoreDebug(
+    "topics.listPublishedByAuthor",
+    () => getDocs(
+      query(
+        collection(db, "topics"),
+        where("status", "==", "published"),
+        where("authorId", "==", authorId),
+      ),
     ),
+    { authorId },
   );
 
   const topics = sortByCreatedAtDescending(
@@ -370,12 +395,16 @@ export async function getTopicsByAuthor(authorId: string) {
 }
 
 export async function getRepliesByTopic(topicId: string) {
-  const snapshot = await getDocs(
-    query(
-      collection(db, "replies"),
-      where("status", "==", "published"),
-      where("topicId", "==", topicId),
+  const snapshot = await withFirestoreDebug(
+    "replies.listPublishedByTopic",
+    () => getDocs(
+      query(
+        collection(db, "replies"),
+        where("status", "==", "published"),
+        where("topicId", "==", topicId),
+      ),
     ),
+    { topicId },
   );
 
   const replies = snapshot.docs
@@ -388,9 +417,18 @@ export async function getRepliesByTopic(topicId: string) {
 
 export async function getForumStats(): Promise<ForumStats> {
   const [users, topics, replies] = await Promise.all([
-    getCountFromServer(collection(db, "users")),
-    getCountFromServer(query(collection(db, "topics"), where("status", "==", "published"))),
-    getCountFromServer(query(collection(db, "replies"), where("status", "==", "published"))),
+    withFirestoreDebug(
+      "users.count",
+      () => getCountFromServer(collection(db, "users")),
+    ),
+    withFirestoreDebug(
+      "topics.countPublished",
+      () => getCountFromServer(query(collection(db, "topics"), where("status", "==", "published"))),
+    ),
+    withFirestoreDebug(
+      "replies.countPublished",
+      () => getCountFromServer(query(collection(db, "replies"), where("status", "==", "published"))),
+    ),
   ]);
 
   return {

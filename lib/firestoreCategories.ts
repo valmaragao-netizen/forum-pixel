@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 import type { VisualTone } from "@/lib/forumData";
 
 export type CreateCategoryInput = {
@@ -148,12 +149,20 @@ export async function createCategory(
   input: CreateCategoryInput,
 ) {
   validateCategory(input);
-  await setDoc(doc(db, "categories", input.slug), categoryPayload(input, moderatorId));
+  await withFirestoreDebug(
+    "categories.create",
+    () => setDoc(doc(db, "categories", input.slug), categoryPayload(input, moderatorId)),
+    { categorySlug: input.slug, moderatorId },
+  );
 }
 
 export async function installDefaultCategories(moderatorId: string) {
-  const existingSnapshots = await Promise.all(
-    DEFAULT_CATEGORIES.map((category) => getDoc(doc(db, "categories", category.slug))),
+  const existingSnapshots = await withFirestoreDebug(
+    "categories.readDefaultsForInstall",
+    () => Promise.all(
+      DEFAULT_CATEGORIES.map((category) => getDoc(doc(db, "categories", category.slug))),
+    ),
+    { moderatorId },
   );
   const batch = writeBatch(db);
   let pendingWrites = 0;
@@ -174,6 +183,10 @@ export async function installDefaultCategories(moderatorId: string) {
     return 0;
   }
 
-  await batch.commit();
+  await withFirestoreDebug(
+    "categories.installDefaults",
+    () => batch.commit(),
+    { moderatorId, count: pendingWrites },
+  );
   return pendingWrites;
 }

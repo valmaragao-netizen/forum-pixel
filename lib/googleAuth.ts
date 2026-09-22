@@ -8,6 +8,7 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
+import { withFirestoreDebug } from "@/lib/firestoreDebug";
 import {
   UsernameUnavailableError,
   reserveUsername,
@@ -41,7 +42,11 @@ function createUsernameCandidate(base: string, attempt: number) {
 }
 
 async function ensureGoogleProfile(user: User) {
-  const profileSnapshot = await getDoc(doc(db, "users", user.uid));
+  const profileSnapshot = await withFirestoreDebug(
+    "users.readGoogleProfile",
+    () => getDoc(doc(db, "users", user.uid)),
+    { userId: user.uid },
+  );
 
   if (profileSnapshot.exists()) {
     const profile = profileSnapshot.data();

@@ -16,6 +16,7 @@ import {
 import { doc, onSnapshot } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
+import { logFirestoreError } from "@/lib/firestoreDebug";
 
 export type UserRole = "user" | "moderator";
 
@@ -83,7 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           setLoading(false);
         },
-        () => {
+        (error) => {
+          logFirestoreError("users.subscribeOwnProfile", error, {
+            userId: currentUser.uid,
+          });
           setProfile(null);
           setLoading(false);
         },
