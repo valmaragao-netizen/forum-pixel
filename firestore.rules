@@ -1,0 +1,439 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isModerator() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator';
+    }
+
+    function validUsernameReservation(username) {
+      return request.resource.data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'normalizedUsername',
+          'createdAt'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.normalizedUsername == username
+        && username.matches('^[a-z0-9_]{2,32}$')
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validPublicProfile(userId) {
+      return request.resource.data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'usernameNormalized',
+          'avatarUrl',
+          'bio',
+          'role',
+          'createdAt'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.usernameNormalized is string
+        && request.resource.data.usernameNormalized.matches('^[a-z0-9_]{2,32}$')
+        && request.resource.data.avatarUrl is string
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 500
+        && request.resource.data.role == 'user'
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validCategory(slug, name) {
+      return exists(/databases/$(database)/documents/categories/$(slug))
+        && get(/databases/$(database)/documents/categories/$(slug)).data.status == 'active'
+        && get(/databases/$(database)/documents/categories/$(slug)).data.name == name;
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/usernames/$(username))
+        && validUsernameReservation(username)
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameNormalized == username;
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && !existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && validPublicProfile(userId)
+        && existsAfter(
+          /databases/$(database)/documents/usernames/$(request.resource.data.usernameNormalized)
+        )
+        && getAfter(
+          /databases/$(database)/documents/usernames/$(request.resource.data.usernameNormalized)
+        ).data.uid == userId;
+
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'avatarUrl',
+          'bio'
+        ])
+        && request.resource.data.avatarUrl is string
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 500;
+
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && !existsAfter(
+          /databases/$(database)/documents/usernames/$(resource.data.usernameNormalized)
+        );
+    }
+
+    match /categories/{categorySlug} {
+      allow read: if resource.data.status == 'active' || isModerator();
+
+      allow create: if isModerator()
+        && request.resource.data.keys().hasOnly([
+          'slug',
+          'name',
+          'description',
+          'seoDescription',
+          'glyph',
+          'tone',
+          'number',
+          'status',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.slug == categorySlug
+        && categorySlug.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 20
+        && request.resource.data.description.size() <= 240
+        && request.resource.data.seoDescription is string
+        && request.resource.data.seoDescription.size() >= 20
+        && request.resource.data.seoDescription.size() <= 260
+        && request.resource.data.glyph is string
+        && request.resource.data.glyph.size() >= 1
+        && request.resource.data.glyph.size() <= 8
+        && request.resource.data.tone in ['blue', 'pink', 'yellow', 'cyan']
+        && request.resource.data.number.matches('^[0-9]{2}$')
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    match /topics/{topicId} {
+      allow read: if resource.data.status == 'published' || isModerator();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'slug',
+          'title',
+          'summary',
+          'content',
+          'categorySlug',
+          'categoryName',
+          'authorId',
+          'authorName',
+          'imageUrl',
+          'imagePath',
+          'status',
+          'views',
+          'repliesCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorName is string
+        && request.resource.data.authorName.size() >= 2
+        && request.resource.data.authorName.size() <= 64
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 8
+        && request.resource.data.title.size() <= 90
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() >= 20
+        && request.resource.data.summary.size() <= 220
+        && request.resource.data.content is string
+        && request.resource.data.content.size() >= 40
+        && request.resource.data.content.size() <= 12000
+        && validCategory(
+          request.resource.data.categorySlug,
+          request.resource.data.categoryName
+        )
+        && request.resource.data.slug == topicId
+        && request.resource.data.slug.matches('^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{8}$')
+        && request.resource.data.imageUrl is string
+        && request.resource.data.imagePath.matches(
+          '^topics/' + request.auth.uid + '/' + topicId + '/cover\\.(jpg|png|webp|gif)$'
+        )
+        && request.resource.data.status == 'published'
+        && request.resource.data.views == 0
+        && request.resource.data.repliesCount == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if (
+          isModerator()
+          && resource.data.status == 'published'
+          && request.resource.data.status == 'deleted'
+          && request.resource.data.deletedBy == request.auth.uid
+          && request.resource.data.deletedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'deletedAt',
+            'deletedBy',
+            'updatedAt'
+          ])
+        ) || (
+          signedIn()
+          && resource.data.authorId == request.auth.uid
+          && resource.data.status == 'published'
+          && request.resource.data.status == 'deleted'
+          && request.resource.data.deletedBy == request.auth.uid
+          && request.resource.data.deletedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'deletedAt',
+            'deletedBy',
+            'updatedAt'
+          ])
+        ) || (
+          signedIn()
+          && resource.data.status == 'published'
+          && request.resource.data.repliesCount == resource.data.repliesCount + 1
+          && request.resource.data.lastReplyId is string
+          && request.resource.data.lastReplyAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'repliesCount',
+            'lastReplyId',
+            'lastReplyAt',
+            'updatedAt'
+          ])
+          && existsAfter(
+            /databases/$(database)/documents/replies/$(request.resource.data.lastReplyId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/replies/$(request.resource.data.lastReplyId)
+          ).data.authorId == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/replies/$(request.resource.data.lastReplyId)
+          ).data.topicId == topicId
+        ) || (
+          isModerator()
+          && request.resource.data.repliesCount == resource.data.repliesCount - 1
+          && request.resource.data.repliesCount >= 0
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'repliesCount',
+            'updatedAt'
+          ])
+        ) || (
+          resource.data.status == 'published'
+          && request.resource.data.views == resource.data.views + 1
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'views'
+          ])
+        );
+
+      allow delete: if false;
+    }
+
+    match /replies/{replyId} {
+      allow read: if resource.data.status == 'published' || isModerator();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'topicId',
+          'topicSlug',
+          'authorId',
+          'authorUsername',
+          'content',
+          'createdAt',
+          'updatedAt',
+          'likesCount',
+          'status'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorUsername is string
+        && request.resource.data.authorUsername.size() >= 2
+        && request.resource.data.authorUsername.size() <= 64
+        && request.resource.data.topicId is string
+        && request.resource.data.topicSlug is string
+        && request.resource.data.content is string
+        && request.resource.data.content.size() >= 2
+        && request.resource.data.content.size() <= 8000
+        && request.resource.data.likesCount == 0
+        && request.resource.data.status == 'published'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && existsAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        ).data.status == 'published'
+        && getAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        ).data.slug == request.resource.data.topicSlug
+        && getAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        ).data.lastReplyId == replyId;
+
+      allow update: if isModerator()
+        && resource.data.status == 'published'
+        && request.resource.data.status == 'deleted'
+        && request.resource.data.deletedBy == request.auth.uid
+        && request.resource.data.deletedAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'deletedAt',
+          'deletedBy',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /inbox/{messageId} {
+      allow read: if signedIn()
+        && resource.data.recipientId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'recipientId',
+          'senderId',
+          'senderUsername',
+          'type',
+          'topicId',
+          'topicSlug',
+          'topicTitle',
+          'replyId',
+          'excerpt',
+          'read',
+          'createdAt'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.senderUsername is string
+        && request.resource.data.senderUsername.size() >= 2
+        && request.resource.data.senderUsername.size() <= 64
+        && request.resource.data.type == 'reply'
+        && request.resource.data.topicId is string
+        && request.resource.data.topicSlug is string
+        && request.resource.data.topicTitle is string
+        && request.resource.data.topicTitle.size() >= 1
+        && request.resource.data.topicTitle.size() <= 90
+        && request.resource.data.replyId is string
+        && request.resource.data.excerpt is string
+        && request.resource.data.excerpt.size() <= 180
+        && request.resource.data.read == false
+        && request.resource.data.createdAt == request.time
+        && existsAfter(
+          /databases/$(database)/documents/replies/$(request.resource.data.replyId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/replies/$(request.resource.data.replyId)
+        ).data.authorId == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/replies/$(request.resource.data.replyId)
+        ).data.topicId == request.resource.data.topicId
+        && existsAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        ).data.authorId == request.resource.data.recipientId
+        && getAfter(
+          /databases/$(database)/documents/topics/$(request.resource.data.topicId)
+        ).data.slug == request.resource.data.topicSlug;
+
+      allow update: if signedIn()
+        && resource.data.recipientId == request.auth.uid
+        && request.resource.data.read == true
+        && request.resource.data.readAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'read',
+          'readAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.participantIds;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'participantIds',
+          'senderId',
+          'senderUsername',
+          'recipientId',
+          'recipientUsername',
+          'body',
+          'read',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.participantIds is list
+        && request.resource.data.participantIds.size() == 2
+        && request.resource.data.participantIds.hasAll([
+          request.auth.uid,
+          request.resource.data.recipientId
+        ])
+        && exists(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        )
+        && exists(
+          /databases/$(database)/documents/users/$(request.resource.data.recipientId)
+        )
+        && request.resource.data.senderUsername == get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.displayName
+        && request.resource.data.recipientUsername == get(
+          /databases/$(database)/documents/users/$(request.resource.data.recipientId)
+        ).data.displayName
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 1
+        && request.resource.data.body.size() <= 2000
+        && request.resource.data.read == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn()
+        && resource.data.recipientId == request.auth.uid
+        && request.resource.data.read == true
+        && request.resource.data.readAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'read',
+          'readAt'
+        ]);
+
+      allow delete: if false;
+    }
+  }
+}
