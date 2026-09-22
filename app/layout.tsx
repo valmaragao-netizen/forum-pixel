@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   title: "Fórum Pixel — Entre na conversa",
   description:
     "Uma comunidade para conversar sobre tecnologia, games, ciência, filmes, programação e muito mais.",
+  verification: {
+    google: "P0XQw84wz5gndz2je5cQnJBwUXxe74LUtj8qGc7uhQg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
